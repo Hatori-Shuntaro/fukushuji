@@ -2,6 +2,18 @@
 
 選択式の一問一答でテスト勉強を進めるブラウザアプリです。
 
+公開URL:
+
+```text
+https://hatori-shuntaro.github.io/fukushuji/
+```
+
+GitHubリポジトリ:
+
+```text
+https://github.com/Hatori-Shuntaro/fukushuji
+```
+
 ## 機能
 
 - 試験カテゴリごとの問題管理
@@ -30,6 +42,12 @@ python3 -m http.server 5173
 3. Authentication > Providers で Email を有効にします。
 4. Authentication > URL Configuration に公開URLを登録します。
 5. `app-config.js` にProject URLとanon public keyを設定します。
+
+このリポジトリをGitHub Pagesで使う場合、SupabaseのRedirect URLsに以下を追加します。
+
+```text
+https://hatori-shuntaro.github.io/fukushuji/
+```
 
 ```js
 window.FUKUSHUJI_CONFIG = {
