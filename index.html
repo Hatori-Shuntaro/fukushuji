@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>復習寺 | テスト勉強アプリ</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app-config.js"></script>
+    <script defer src="./app.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Test Study</p>
+          <h1>復習寺</h1>
+        </div>
+        <div class="topbar-actions">
+          <span id="sync-badge" class="sync-badge">確認中</span>
+          <button id="logout-button" class="icon-text-button hidden" type="button" title="ログアウト">
+            <span aria-hidden="true">↪</span>
+            <span>ログアウト</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section id="auth-panel" class="auth-panel hidden" aria-labelledby="auth-title">
+          <div>
+            <p class="eyebrow">Account</p>
+            <h2 id="auth-title">メールでログイン</h2>
+            <p class="muted">
+              Supabaseのメールリンク認証を使います。届いたリンクを開くと、この端末で学習データを同期できます。
+            </p>
+          </div>
+          <form id="login-form" class="auth-form">
+            <label>
+              <span>メールアドレス</span>
+              <input id="email-input" type="email" autocomplete="email" required placeholder="you@example.com" />
+            </label>
+            <button type="submit" class="primary-button">ログインリンクを送信</button>
+          </form>
+          <p id="auth-message" class="form-message" role="status"></p>
+        </section>
+
+        <section id="setup-panel" class="setup-panel hidden">
+          <div>
+            <p class="eyebrow">Local Demo</p>
+            <h2>Supabase未設定</h2>
+            <p class="muted">
+              今はこのブラウザ内だけに保存します。公開・スマホ同期を使うには
+              <code>app-config.js</code> にSupabase URLとanon keyを設定してください。
+            </p>
+          </div>
+          <div class="setup-actions">
+            <button id="reset-local-button" class="secondary-button" type="button">サンプルデータに戻す</button>
+          </div>
+        </section>
+
+        <section id="app-panel" class="hidden">
+          <nav class="tabs" aria-label="メイン">
+            <button class="tab-button active" type="button" data-tab="study">学習</button>
+            <button class="tab-button" type="button" data-tab="manage">試験/問題管理</button>
+            <button class="tab-button" type="button" data-tab="favorites">お気に入り</button>
+          </nav>
+
+          <section id="study-tab" class="tab-panel active" aria-labelledby="study-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Study</p>
+                <h2 id="study-heading">一問一答</h2>
+              </div>
+              <div class="study-controls">
+                <label>
+                  <span>試験</span>
+                  <select id="study-exam-select"></select>
+                </label>
+                <label class="switch-label">
+                  <input id="shuffle-toggle" type="checkbox" />
+                  <span>シャッフル</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="stats-grid" aria-label="学習状況">
+              <div>
+                <span>正解</span>
+                <strong id="session-correct">0</strong>
+              </div>
+              <div>
+                <span>不正解</span>
+                <strong id="session-wrong">0</strong>
+              </div>
+              <div>
+                <span>正答率</span>
+                <strong id="session-rate">0%</strong>
+              </div>
+            </div>
+
+            <article id="question-card" class="question-card"></article>
+          </section>
+
+          <section id="manage-tab" class="tab-panel" aria-labelledby="manage-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Manage</p>
+                <h2 id="manage-heading">試験と問題</h2>
+              </div>
+            </div>
+
+            <div class="manage-layout">
+              <section class="workspace-panel" aria-labelledby="exam-form-heading">
+                <h3 id="exam-form-heading">試験カテゴリ</h3>
+                <form id="exam-form" class="stack-form">
+                  <input id="exam-id" type="hidden" />
+                  <label>
+                    <span>試験名</span>
+                    <input id="exam-name" type="text" required placeholder="例: 英語 中間テスト" />
+                  </label>
+                  <div class="button-row">
+                    <button class="primary-button" type="submit">保存</button>
+                    <button id="exam-cancel" class="secondary-button" type="button">クリア</button>
+                  </div>
+                </form>
+                <div id="exam-list" class="list-stack"></div>
+              </section>
+
+              <section class="workspace-panel" aria-labelledby="question-form-heading">
+                <h3 id="question-form-heading">問題</h3>
+                <form id="question-form" class="stack-form">
+                  <input id="question-id" type="hidden" />
+                  <label>
+                    <span>所属試験</span>
+                    <select id="question-exam"></select>
+                  </label>
+                  <label>
+                    <span>問題文</span>
+                    <textarea id="question-text" rows="3" required placeholder="問題文を入力"></textarea>
+                  </label>
+                  <label>
+                    <span>選択肢（1行に1つ）</span>
+                    <textarea id="question-choices" rows="5" required placeholder="選択肢A&#10;選択肢B&#10;選択肢C"></textarea>
+                  </label>
+                  <label>
+                    <span>正解</span>
+                    <select id="question-correct"></select>
+                  </label>
+                  <label>
+                    <span>メモ</span>
+                    <textarea id="question-memo" rows="4" placeholder="正誤の理由、覚え方、補足など"></textarea>
+                  </label>
+                  <label class="switch-label">
+                    <input id="question-favorite" type="checkbox" />
+                    <span>お気に入りに登録</span>
+                  </label>
+                  <p id="question-form-message" class="form-message" role="status"></p>
+                  <div class="button-row">
+                    <button class="primary-button" type="submit">問題を保存</button>
+                    <button id="question-cancel" class="secondary-button" type="button">クリア</button>
+                  </div>
+                </form>
+                <div id="question-list" class="list-stack"></div>
+              </section>
+            </div>
+          </section>
+
+          <section id="favorites-tab" class="tab-panel" aria-labelledby="favorites-heading">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Favorites</p>
+                <h2 id="favorites-heading">お気に入り復習</h2>
+              </div>
+            </div>
+            <div id="favorite-list" class="favorite-grid"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

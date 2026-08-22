@@ -1,0 +1,4 @@
+window.FUKUSHUJI_CONFIG = {
+  SUPABASE_URL: "https://oqstscdsrmpmnbhgfekk.supabase.co",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9xc3RzY2Rzcm1wbW5iaGdmZWtrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNzcyNzcsImV4cCI6MjEwMjk1MzI3N30.B8zdNea1pD9SAtILfQE2yUp3Dvaw6HydEsRTZMfTkbc"
+};
