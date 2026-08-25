@@ -87,6 +87,8 @@ const state = {
   activeTab: "study",
   selectedExamId: "all",
   currentQuestionId: null,
+  studyOrder: [],
+  studyIndex: 0,
   answeredChoice: null,
   sessionCorrect: 0,
   sessionWrong: 0,
@@ -378,13 +380,11 @@ function bindEvents() {
   });
   els.studyExamSelect.addEventListener("change", () => {
     state.selectedExamId = els.studyExamSelect.value;
-    state.currentQuestionId = null;
-    state.answeredChoice = null;
+    resetStudyProgress();
     render();
   });
   els.shuffleToggle.addEventListener("change", () => {
-    state.currentQuestionId = null;
-    state.answeredChoice = null;
+    resetStudyProgress();
     render();
   });
   els.examForm.addEventListener("submit", handleExamSubmit);
@@ -437,8 +437,7 @@ async function resetLocalDemo() {
   const confirmed = window.confirm("ローカル保存データを削除して、サンプルデータに戻します。よろしいですか？");
   if (!confirmed) return;
   state.store.clear();
-  state.currentQuestionId = null;
-  state.answeredChoice = null;
+  resetStudyProgress();
   state.sessionCorrect = 0;
   state.sessionWrong = 0;
   await loadData();
@@ -456,7 +455,7 @@ async function loadData() {
       state.selectedExamId = "all";
     }
     if (!state.currentQuestionId || !state.questions.some((question) => question.id === state.currentQuestionId)) {
-      state.currentQuestionId = null;
+      resetStudyProgress();
     }
     render();
   } catch (error) {
@@ -536,8 +535,7 @@ function renderStats() {
 function renderQuestionCard() {
   const pool = getStudyQuestions();
   if (!pool.length) {
-    state.currentQuestionId = null;
-    state.answeredChoice = null;
+    resetStudyProgress();
     els.questionCard.className = "question-card empty";
     els.questionCard.innerHTML = `
       <p class="eyebrow">No Questions</p>
@@ -549,18 +547,17 @@ function renderQuestionCard() {
     return;
   }
 
-  if (!state.currentQuestionId || !pool.some((question) => question.id === state.currentQuestionId)) {
-    state.currentQuestionId = pool[0].id;
-  }
+  ensureStudyOrder(pool);
   const question = pool.find((item) => item.id === state.currentQuestionId);
   const exam = state.exams.find((item) => item.id === question.exam_id);
   const answered = state.answeredChoice !== null;
   const isCorrect = answered && state.answeredChoice === question.correct_index;
+  const progress = getStudyProgress(pool);
 
   els.questionCard.className = "question-card";
   els.questionCard.innerHTML = `
     <div class="question-meta">
-      <span>${escapeHtml(exam?.name || "未分類")}</span>
+      <span>${escapeHtml(exam?.name || "未分類")} / ${progress.current}問目 / 全${progress.total}問</span>
       <button class="favorite-toggle ${question.is_favorite ? "active" : ""}" type="button" title="お気に入り">
         ${question.is_favorite ? "★" : "☆"}
       </button>
@@ -635,13 +632,13 @@ async function answerQuestion(choiceIndex) {
 function nextQuestion() {
   const pool = getStudyQuestions();
   if (!pool.length) return;
-  if (els.shuffleToggle.checked && pool.length > 1) {
-    const candidates = pool.filter((question) => question.id !== state.currentQuestionId);
-    state.currentQuestionId = candidates[Math.floor(Math.random() * candidates.length)].id;
-  } else {
-    const currentIndex = pool.findIndex((question) => question.id === state.currentQuestionId);
-    state.currentQuestionId = pool[(currentIndex + 1) % pool.length].id;
+  ensureStudyOrder(pool);
+  state.studyIndex += 1;
+  if (state.studyIndex >= state.studyOrder.length) {
+    state.studyOrder = buildStudyOrder(pool);
+    state.studyIndex = 0;
   }
+  state.currentQuestionId = state.studyOrder[state.studyIndex];
   state.answeredChoice = null;
   renderQuestionCard();
 }
@@ -652,6 +649,52 @@ function getStudyQuestions() {
       ? state.questions
       : state.questions.filter((question) => question.exam_id === state.selectedExamId);
   return [...filtered].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+}
+
+function resetStudyProgress() {
+  state.currentQuestionId = null;
+  state.studyOrder = [];
+  state.studyIndex = 0;
+  state.answeredChoice = null;
+}
+
+function ensureStudyOrder(pool) {
+  const poolIds = pool.map((question) => question.id);
+  const orderMatchesPool =
+    state.studyOrder.length === poolIds.length &&
+    state.studyOrder.every((id) => poolIds.includes(id)) &&
+    poolIds.every((id) => state.studyOrder.includes(id));
+  if (!orderMatchesPool) {
+    const currentQuestionId = state.currentQuestionId;
+    state.studyOrder = buildStudyOrder(pool);
+    state.studyIndex = currentQuestionId ? state.studyOrder.indexOf(currentQuestionId) : 0;
+    if (state.studyIndex < 0) {
+      state.studyIndex = 0;
+    }
+  }
+  state.currentQuestionId = state.studyOrder[state.studyIndex] || poolIds[0];
+}
+
+function buildStudyOrder(pool) {
+  const order = pool.map((question) => question.id);
+  return els.shuffleToggle.checked ? shuffleArray(order) : order;
+}
+
+function getStudyProgress(pool) {
+  ensureStudyOrder(pool);
+  return {
+    current: Math.min(state.studyIndex + 1, state.studyOrder.length),
+    total: state.studyOrder.length
+  };
+}
+
+function shuffleArray(values) {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
 }
 
 async function toggleFavorite(questionId) {
@@ -1155,8 +1198,7 @@ function renderFavoriteList() {
   els.favoriteList.querySelectorAll("[data-favorite-study]").forEach((button) => {
     button.addEventListener("click", () => {
       state.selectedExamId = button.dataset.favoriteStudy;
-      state.currentQuestionId = null;
-      state.answeredChoice = null;
+      resetStudyProgress();
       setTab("study");
       render();
     });
