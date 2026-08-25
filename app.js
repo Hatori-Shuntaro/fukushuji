@@ -60,6 +60,7 @@ const els = {
   examId: document.querySelector("#exam-id"),
   examName: document.querySelector("#exam-name"),
   examCancel: document.querySelector("#exam-cancel"),
+  examFormMessage: document.querySelector("#exam-form-message"),
   examList: document.querySelector("#exam-list"),
   questionForm: document.querySelector("#question-form"),
   questionId: document.querySelector("#question-id"),
@@ -751,8 +752,14 @@ async function updateQuestionMemo(questionId, memo) {
 
 async function handleExamSubmit(event) {
   event.preventDefault();
+  els.examFormMessage.textContent = "";
   const name = els.examName.value.trim();
   if (!name) return;
+  const duplicateExam = findDuplicateExamName(name, els.examId.value || null);
+  if (duplicateExam) {
+    els.examFormMessage.textContent = `同じ試験名「${duplicateExam.name}」が既にあります。別の試験名にしてください。`;
+    return;
+  }
   try {
     await state.store.saveExam({
       id: els.examId.value || null,
@@ -822,6 +829,7 @@ async function deleteExam(id) {
 function resetExamForm() {
   els.examId.value = "";
   els.examName.value = "";
+  els.examFormMessage.textContent = "";
 }
 
 async function handleQuestionSubmit(event) {
@@ -855,7 +863,7 @@ async function handlePastExamImport() {
     els.pastExamAnswerFiles.value = "";
     await loadData();
     els.pastExamImportMessage.textContent =
-      `取込完了: 試験${result.createdExams}件追加、問題${result.createdQuestions}問追加、${result.skippedQuestions}問スキップ`;
+      `取込完了: 試験${result.createdExams}件追加、問題${result.createdQuestions}問追加`;
   } catch (error) {
     els.pastExamImportMessage.textContent = error?.message || "過去問を取り込めませんでした。";
   } finally {
@@ -880,31 +888,17 @@ function updatePastExamSelectionMessage() {
 
 async function importPastExams(parsedExams) {
   const existingExams = normalizeExams(await state.store.getExams());
-  const existingQuestions = normalizeQuestions(await state.store.getQuestions());
-  const examByName = new Map(existingExams.map((exam) => [exam.name, exam]));
-  const questionKeys = new Set(
-    existingQuestions.map((question) => `${question.exam_id}\n${normalizeQuestionKey(question.question)}`)
-  );
+  validateUniqueImportExamNames(parsedExams, existingExams);
   const result = {
     createdExams: 0,
-    createdQuestions: 0,
-    skippedQuestions: 0
+    createdQuestions: 0
   };
 
   for (const parsedExam of parsedExams) {
-    let exam = examByName.get(parsedExam.name);
-    if (!exam) {
-      exam = await state.store.saveExam({ name: parsedExam.name });
-      examByName.set(parsedExam.name, exam);
-      result.createdExams += 1;
-    }
+    const exam = await state.store.saveExam({ name: parsedExam.name });
+    result.createdExams += 1;
 
     for (const question of parsedExam.questions) {
-      const duplicateKey = `${exam.id}\n${normalizeQuestionKey(question.question)}`;
-      if (questionKeys.has(duplicateKey)) {
-        result.skippedQuestions += 1;
-        continue;
-      }
       await state.store.saveQuestion({
         exam_id: exam.id,
         question: question.question,
@@ -913,12 +907,32 @@ async function importPastExams(parsedExams) {
         memo: question.memo,
         is_favorite: false
       });
-      questionKeys.add(duplicateKey);
       result.createdQuestions += 1;
     }
   }
 
   return result;
+}
+
+function validateUniqueImportExamNames(parsedExams, existingExams) {
+  const selectedNames = new Set();
+  const duplicateSelectedNames = [];
+  for (const parsedExam of parsedExams) {
+    const key = normalizeExamNameKey(parsedExam.name);
+    if (selectedNames.has(key)) {
+      duplicateSelectedNames.push(parsedExam.name);
+    }
+    selectedNames.add(key);
+  }
+
+  const existingByName = new Map(existingExams.map((exam) => [normalizeExamNameKey(exam.name), exam.name]));
+  const duplicateExistingNames = parsedExams
+    .map((parsedExam) => existingByName.get(normalizeExamNameKey(parsedExam.name)))
+    .filter(Boolean);
+  const duplicateNames = [...new Set([...duplicateSelectedNames, ...duplicateExistingNames])];
+  if (duplicateNames.length) {
+    throw new Error(`同じ試験名があるため登録できません。試験名を変更してください: ${duplicateNames.join(", ")}`);
+  }
 }
 
 async function parsePastExamFiles(selectedQuestionFiles, selectedAnswerFiles) {
@@ -1077,8 +1091,13 @@ function extractMarkdownTitle(markdown) {
   return match ? match[1].trim() : "";
 }
 
-function normalizeQuestionKey(question) {
-  return String(question || "").replace(/\s+/g, " ").trim();
+function normalizeExamNameKey(name) {
+  return String(name || "").replace(/\s+/g, " ").trim();
+}
+
+function findDuplicateExamName(name, ignoredExamId = null) {
+  const key = normalizeExamNameKey(name);
+  return state.exams.find((exam) => exam.id !== ignoredExamId && normalizeExamNameKey(exam.name) === key);
 }
 
 function buildQuestionPayload() {
