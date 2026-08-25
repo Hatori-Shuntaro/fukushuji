@@ -53,6 +53,8 @@ const els = {
   sessionCorrect: document.querySelector("#session-correct"),
   sessionWrong: document.querySelector("#session-wrong"),
   sessionRate: document.querySelector("#session-rate"),
+  sessionProgress: document.querySelector("#session-progress"),
+  sessionPosition: document.querySelector("#session-position"),
   questionCard: document.querySelector("#question-card"),
   examForm: document.querySelector("#exam-form"),
   examId: document.querySelector("#exam-id"),
@@ -89,6 +91,8 @@ const state = {
   currentQuestionId: null,
   studyOrder: [],
   studyIndex: 0,
+  studyAnsweredIds: [],
+  shuffleStartAvoidQuestionId: null,
   answeredChoice: null,
   sessionCorrect: 0,
   sessionWrong: 0,
@@ -384,7 +388,9 @@ function bindEvents() {
     render();
   });
   els.shuffleToggle.addEventListener("change", () => {
+    const previousQuestionId = state.currentQuestionId;
     resetStudyProgress();
+    state.shuffleStartAvoidQuestionId = els.shuffleToggle.checked ? previousQuestionId : null;
     render();
   });
   els.examForm.addEventListener("submit", handleExamSubmit);
@@ -527,9 +533,12 @@ function renderSelects() {
 function renderStats() {
   const total = state.sessionCorrect + state.sessionWrong;
   const rate = total ? Math.round((state.sessionCorrect / total) * 100) : 0;
+  const progress = getStudyProgress(getStudyQuestions());
   els.sessionCorrect.textContent = String(state.sessionCorrect);
   els.sessionWrong.textContent = String(state.sessionWrong);
   els.sessionRate.textContent = `${rate}%`;
+  els.sessionProgress.textContent = `${progress.percent}%`;
+  els.sessionPosition.textContent = `${progress.answered} / ${progress.total}`;
 }
 
 function renderQuestionCard() {
@@ -616,6 +625,9 @@ async function answerQuestion(choiceIndex) {
   if (!question || state.answeredChoice !== null) return;
   state.answeredChoice = choiceIndex;
   const isCorrect = choiceIndex === question.correct_index;
+  if (!state.studyAnsweredIds.includes(question.id)) {
+    state.studyAnsweredIds.push(question.id);
+  }
   state.sessionCorrect += isCorrect ? 1 : 0;
   state.sessionWrong += isCorrect ? 0 : 1;
   render();
@@ -635,12 +647,14 @@ function nextQuestion() {
   ensureStudyOrder(pool);
   state.studyIndex += 1;
   if (state.studyIndex >= state.studyOrder.length) {
+    state.shuffleStartAvoidQuestionId = els.shuffleToggle.checked ? state.currentQuestionId : null;
     state.studyOrder = buildStudyOrder(pool);
     state.studyIndex = 0;
+    state.studyAnsweredIds = [];
   }
   state.currentQuestionId = state.studyOrder[state.studyIndex];
   state.answeredChoice = null;
-  renderQuestionCard();
+  render();
 }
 
 function getStudyQuestions() {
@@ -655,10 +669,12 @@ function resetStudyProgress() {
   state.currentQuestionId = null;
   state.studyOrder = [];
   state.studyIndex = 0;
+  state.studyAnsweredIds = [];
   state.answeredChoice = null;
 }
 
 function ensureStudyOrder(pool) {
+  if (!pool.length) return;
   const poolIds = pool.map((question) => question.id);
   const orderMatchesPool =
     state.studyOrder.length === poolIds.length &&
@@ -668,6 +684,7 @@ function ensureStudyOrder(pool) {
     const currentQuestionId = state.currentQuestionId;
     state.studyOrder = buildStudyOrder(pool);
     state.studyIndex = currentQuestionId ? state.studyOrder.indexOf(currentQuestionId) : 0;
+    state.studyAnsweredIds = state.studyAnsweredIds.filter((id) => poolIds.includes(id));
     if (state.studyIndex < 0) {
       state.studyIndex = 0;
     }
@@ -677,14 +694,37 @@ function ensureStudyOrder(pool) {
 
 function buildStudyOrder(pool) {
   const order = pool.map((question) => question.id);
-  return els.shuffleToggle.checked ? shuffleArray(order) : order;
+  if (!els.shuffleToggle.checked) {
+    state.shuffleStartAvoidQuestionId = null;
+    return order;
+  }
+  const shuffled = shuffleArray(order);
+  const avoidQuestionId = state.shuffleStartAvoidQuestionId;
+  state.shuffleStartAvoidQuestionId = null;
+  if (avoidQuestionId && shuffled.length > 1 && shuffled[0] === avoidQuestionId) {
+    [shuffled[0], shuffled[1]] = [shuffled[1], shuffled[0]];
+  }
+  return shuffled;
 }
 
 function getStudyProgress(pool) {
+  if (!pool.length) {
+    return {
+      current: 0,
+      total: 0,
+      answered: 0,
+      percent: 0
+    };
+  }
   ensureStudyOrder(pool);
+  const orderIds = new Set(state.studyOrder);
+  const answered = state.studyAnsweredIds.filter((id) => orderIds.has(id)).length;
+  const total = state.studyOrder.length;
   return {
-    current: Math.min(state.studyIndex + 1, state.studyOrder.length),
-    total: state.studyOrder.length
+    current: Math.min(state.studyIndex + 1, total),
+    total,
+    answered,
+    percent: total ? Math.round((answered / total) * 100) : 0
   };
 }
 

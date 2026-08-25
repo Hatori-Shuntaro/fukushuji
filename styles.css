@@ -310,7 +310,7 @@ textarea:focus {
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -333,6 +333,14 @@ textarea:focus {
   display: block;
   margin-top: 4px;
   font-size: 1.5rem;
+}
+
+.stats-grid small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
 }
 
 .question-card {
