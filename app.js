@@ -1042,7 +1042,7 @@ function parseQuestionMarkdown(markdown) {
 
     return {
       number: heading.number,
-      question: [heading.title, promptExtra].filter(Boolean).join("\n\n"),
+      question: [`問${heading.number} ${heading.title}`, promptExtra].filter(Boolean).join("\n\n"),
       choices: choices.map((choice) => choice.text)
     };
   });
