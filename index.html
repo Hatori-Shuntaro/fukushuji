@@ -131,8 +131,12 @@
                 <section class="import-panel" aria-labelledby="import-heading">
                   <h4 id="import-heading">過去問Markdown取込</h4>
                   <label>
-                    <span>Markdownファイルまたはフォルダ</span>
-                    <input id="past-exam-files" type="file" accept=".md,text/markdown,text/plain" multiple webkitdirectory directory />
+                    <span>Markdownファイル</span>
+                    <input id="past-exam-files" type="file" accept=".md,text/markdown,text/plain" multiple />
+                  </label>
+                  <label>
+                    <span>フォルダ</span>
+                    <input id="past-exam-folder" type="file" accept=".md,text/markdown,text/plain" multiple webkitdirectory directory />
                   </label>
                   <div class="button-row">
                     <button id="past-exam-import" class="secondary-button" type="button">一括登録</button>

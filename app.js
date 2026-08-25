@@ -72,6 +72,7 @@ const els = {
   questionList: document.querySelector("#question-list"),
   favoriteList: document.querySelector("#favorite-list"),
   pastExamFiles: document.querySelector("#past-exam-files"),
+  pastExamFolder: document.querySelector("#past-exam-folder"),
   pastExamImport: document.querySelector("#past-exam-import"),
   pastExamImportMessage: document.querySelector("#past-exam-import-message")
 };
@@ -392,6 +393,8 @@ function bindEvents() {
   els.questionCancel.addEventListener("click", resetQuestionForm);
   els.questionChoices.addEventListener("input", renderCorrectSelect);
   els.pastExamImport.addEventListener("click", handlePastExamImport);
+  els.pastExamFiles.addEventListener("change", updatePastExamSelectionMessage);
+  els.pastExamFolder.addEventListener("change", updatePastExamSelectionMessage);
 }
 
 async function handleSession(session) {
@@ -752,7 +755,7 @@ async function handlePastExamImport() {
     els.pastExamImportMessage.textContent = "Supabaseにログインしてから取り込んでください。";
     return;
   }
-  const files = Array.from(els.pastExamFiles.files || []);
+  const files = getSelectedPastExamFiles();
   if (!files.length) {
     els.pastExamImportMessage.textContent = "過去問フォルダまたはMarkdownファイルを選択してください。";
     return;
@@ -766,6 +769,7 @@ async function handlePastExamImport() {
     els.pastExamImportMessage.textContent = `${parsedExams.length}試験、${totalQuestions}問を登録中...`;
     const result = await importPastExams(parsedExams);
     els.pastExamFiles.value = "";
+    els.pastExamFolder.value = "";
     await loadData();
     els.pastExamImportMessage.textContent =
       `取込完了: 試験${result.createdExams}件追加、問題${result.createdQuestions}問追加、${result.skippedQuestions}問スキップ`;
@@ -774,6 +778,15 @@ async function handlePastExamImport() {
   } finally {
     els.pastExamImport.disabled = false;
   }
+}
+
+function getSelectedPastExamFiles() {
+  return [...Array.from(els.pastExamFiles.files || []), ...Array.from(els.pastExamFolder.files || [])];
+}
+
+function updatePastExamSelectionMessage() {
+  const count = getSelectedPastExamFiles().filter((file) => file.name.toLowerCase().endsWith(".md")).length;
+  els.pastExamImportMessage.textContent = count ? `${count}件のMarkdownファイルを選択中` : "";
 }
 
 async function importPastExams(parsedExams) {
@@ -832,10 +845,10 @@ async function parsePastExamFiles(files) {
   const parsedExams = [];
   const errors = [];
   for (const questionFile of questionFiles) {
-    const answerName = getAnswerFileName(questionFile.name);
-    const answerFile = fileByName.get(answerName);
+    const answerNames = getAnswerFileNames(questionFile.name);
+    const answerFile = answerNames.map((answerName) => fileByName.get(answerName)).find(Boolean);
     if (!answerFile) {
-      errors.push(`${questionFile.name}: 対応する${answerName}がありません。`);
+      errors.push(`${questionFile.name}: 対応する解答Markdownがありません。候補: ${answerNames.join(", ")}`);
       continue;
     }
 
@@ -951,14 +964,19 @@ function parseAnswerMarkdown(markdown) {
 }
 
 function isPastQuestionFile(fileName) {
-  return /^過去問\d{4}年\.md$/.test(fileName) || /^予測問題\d{4}_第\d+回_問題\.md$/.test(fileName);
+  return /^過去問\d{4}年?\.md$/.test(fileName) || /^予測問題\d{4}_第\d+回_問題\.md$/.test(fileName);
 }
 
-function getAnswerFileName(questionFileName) {
-  if (/^過去問\d{4}年\.md$/.test(questionFileName)) {
-    return questionFileName.replace(/^過去問/, "解答");
+function getAnswerFileNames(questionFileName) {
+  const pastExamMatch = questionFileName.match(/^過去問(\d{4})年?\.md$/);
+  if (pastExamMatch) {
+    const year = pastExamMatch[1];
+    return [`解答${year}年.md`, `回答${year}年.md`, `解答${year}.md`, `回答${year}.md`];
   }
-  return questionFileName.replace(/_問題\.md$/i, "_解答.md");
+  return [
+    questionFileName.replace(/_問題\.md$/i, "_解答.md"),
+    questionFileName.replace(/_問題\.md$/i, "_回答.md")
+  ];
 }
 
 function extractMarkdownTitle(markdown) {
