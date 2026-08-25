@@ -70,7 +70,10 @@ const els = {
   questionFormMessage: document.querySelector("#question-form-message"),
   questionCancel: document.querySelector("#question-cancel"),
   questionList: document.querySelector("#question-list"),
-  favoriteList: document.querySelector("#favorite-list")
+  favoriteList: document.querySelector("#favorite-list"),
+  pastExamFiles: document.querySelector("#past-exam-files"),
+  pastExamImport: document.querySelector("#past-exam-import"),
+  pastExamImportMessage: document.querySelector("#past-exam-import-message")
 };
 
 const state = {
@@ -388,6 +391,7 @@ function bindEvents() {
   els.questionForm.addEventListener("submit", handleQuestionSubmit);
   els.questionCancel.addEventListener("click", resetQuestionForm);
   els.questionChoices.addEventListener("input", renderCorrectSelect);
+  els.pastExamImport.addEventListener("click", handlePastExamImport);
 }
 
 async function handleSession(session) {
@@ -740,6 +744,230 @@ async function handleQuestionSubmit(event) {
   if (!payload) return;
   await saveQuestion(payload);
   resetQuestionForm();
+}
+
+async function handlePastExamImport() {
+  els.pastExamImportMessage.textContent = "";
+  if (state.mode !== "supabase" || !state.user || !(state.store instanceof SupabaseStore)) {
+    els.pastExamImportMessage.textContent = "Supabaseにログインしてから取り込んでください。";
+    return;
+  }
+  const files = Array.from(els.pastExamFiles.files || []);
+  if (!files.length) {
+    els.pastExamImportMessage.textContent = "過去問フォルダまたはMarkdownファイルを選択してください。";
+    return;
+  }
+
+  els.pastExamImport.disabled = true;
+  els.pastExamImportMessage.textContent = "Markdownを確認中...";
+  try {
+    const parsedExams = await parsePastExamFiles(files);
+    const totalQuestions = parsedExams.reduce((sum, exam) => sum + exam.questions.length, 0);
+    els.pastExamImportMessage.textContent = `${parsedExams.length}試験、${totalQuestions}問を登録中...`;
+    const result = await importPastExams(parsedExams);
+    els.pastExamFiles.value = "";
+    await loadData();
+    els.pastExamImportMessage.textContent =
+      `取込完了: 試験${result.createdExams}件追加、問題${result.createdQuestions}問追加、${result.skippedQuestions}問スキップ`;
+  } catch (error) {
+    els.pastExamImportMessage.textContent = error?.message || "過去問を取り込めませんでした。";
+  } finally {
+    els.pastExamImport.disabled = false;
+  }
+}
+
+async function importPastExams(parsedExams) {
+  const existingExams = normalizeExams(await state.store.getExams());
+  const existingQuestions = normalizeQuestions(await state.store.getQuestions());
+  const examByName = new Map(existingExams.map((exam) => [exam.name, exam]));
+  const questionKeys = new Set(
+    existingQuestions.map((question) => `${question.exam_id}\n${normalizeQuestionKey(question.question)}`)
+  );
+  const result = {
+    createdExams: 0,
+    createdQuestions: 0,
+    skippedQuestions: 0
+  };
+
+  for (const parsedExam of parsedExams) {
+    let exam = examByName.get(parsedExam.name);
+    if (!exam) {
+      exam = await state.store.saveExam({ name: parsedExam.name });
+      examByName.set(parsedExam.name, exam);
+      result.createdExams += 1;
+    }
+
+    for (const question of parsedExam.questions) {
+      const duplicateKey = `${exam.id}\n${normalizeQuestionKey(question.question)}`;
+      if (questionKeys.has(duplicateKey)) {
+        result.skippedQuestions += 1;
+        continue;
+      }
+      await state.store.saveQuestion({
+        exam_id: exam.id,
+        question: question.question,
+        choices: question.choices,
+        correct_index: question.correct_index,
+        memo: question.memo,
+        is_favorite: false
+      });
+      questionKeys.add(duplicateKey);
+      result.createdQuestions += 1;
+    }
+  }
+
+  return result;
+}
+
+async function parsePastExamFiles(files) {
+  const markdownFiles = files.filter((file) => file.name.toLowerCase().endsWith(".md"));
+  const fileByName = new Map(markdownFiles.map((file) => [file.name, file]));
+  const questionFiles = markdownFiles
+    .filter((file) => isPastQuestionFile(file.name))
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  if (!questionFiles.length) {
+    throw new Error("問題Markdownが見つかりませんでした。");
+  }
+
+  const parsedExams = [];
+  const errors = [];
+  for (const questionFile of questionFiles) {
+    const answerName = getAnswerFileName(questionFile.name);
+    const answerFile = fileByName.get(answerName);
+    if (!answerFile) {
+      errors.push(`${questionFile.name}: 対応する${answerName}がありません。`);
+      continue;
+    }
+
+    const questionText = await questionFile.text();
+    const answerText = await answerFile.text();
+    try {
+      const parsedExam = parsePastExamMarkdown(questionFile.name, questionText, answerText);
+      parsedExams.push(parsedExam);
+    } catch (error) {
+      errors.push(`${questionFile.name}: ${error.message}`);
+    }
+  }
+
+  if (errors.length) {
+    throw new Error(errors.join("\n"));
+  }
+  return parsedExams;
+}
+
+function parsePastExamMarkdown(fileName, questionMarkdown, answerMarkdown) {
+  const title = extractMarkdownTitle(questionMarkdown);
+  const questions = parseQuestionMarkdown(questionMarkdown);
+  const answers = parseAnswerMarkdown(answerMarkdown);
+  const answersByNumber = new Map(answers.map((answer) => [answer.number, answer]));
+
+  const missingAnswers = questions
+    .filter((question) => !answersByNumber.has(question.number))
+    .map((question) => question.number);
+  if (questions.length !== answers.length || missingAnswers.length) {
+    throw new Error(
+      `問題数と解答数が一致しません。問題${questions.length}件、解答${answers.length}件` +
+        (missingAnswers.length ? `、未回答: ${missingAnswers.join(", ")}` : "")
+    );
+  }
+
+  return {
+    name: title || fileName.replace(/\.md$/i, ""),
+    questions: questions.map((question) => {
+      const answer = answersByNumber.get(question.number);
+      if (!answer || answer.correctIndex < 0 || answer.correctIndex >= question.choices.length) {
+        throw new Error(`問${question.number}の解答が選択肢の範囲外です。`);
+      }
+      return {
+        question: question.question,
+        choices: question.choices,
+        correct_index: answer.correctIndex,
+        memo: answer.reason
+      };
+    })
+  };
+}
+
+function parseQuestionMarkdown(markdown) {
+  const headings = [...markdown.matchAll(/^## 問(\d+)\s+(.+)$/gm)].map((match) => ({
+    index: match.index,
+    number: Number(match[1]),
+    title: match[2].trim()
+  }));
+  if (!headings.length) {
+    throw new Error("問見出しが見つかりません。");
+  }
+
+  return headings.map((heading, index) => {
+    const nextIndex = headings[index + 1]?.index ?? markdown.length;
+    const block = markdown.slice(heading.index, nextIndex);
+    const lines = block.split("\n").slice(1);
+    const firstChoiceIndex = lines.findIndex((line) => /^1\.\s+/.test(line));
+    if (firstChoiceIndex === -1) {
+      throw new Error(`問${heading.number}の選択肢が見つかりません。`);
+    }
+    const promptExtra = lines.slice(0, firstChoiceIndex).join("\n").trim();
+    const choiceLines = lines.slice(firstChoiceIndex).filter((line) => /^\d+\.\s+/.test(line));
+    const choices = choiceLines.map((line) => {
+      const match = line.match(/^(\d+)\.\s+(.+)$/);
+      return { label: Number(match[1]), text: match[2].trim() };
+    });
+    const expectedLabels = [1, 2, 3, 4];
+    const isValidChoiceSet =
+      choices.length === expectedLabels.length &&
+      choices.every((choice, choiceIndex) => choice.label === expectedLabels[choiceIndex] && choice.text);
+    if (!isValidChoiceSet) {
+      throw new Error(`問${heading.number}の選択肢は1〜4の4件である必要があります。`);
+    }
+
+    return {
+      number: heading.number,
+      question: [heading.title, promptExtra].filter(Boolean).join("\n\n"),
+      choices: choices.map((choice) => choice.text)
+    };
+  });
+}
+
+function parseAnswerMarkdown(markdown) {
+  const answers = [];
+  for (const line of markdown.split("\n")) {
+    const match = line.match(/^\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*([^|]*)\|/);
+    if (!match) continue;
+    const number = Number(match[1]);
+    const answerNumber = Number(match[2]);
+    if (answerNumber < 1 || answerNumber > 4) {
+      throw new Error(`問${number}の解答が1〜4以外です。`);
+    }
+    answers.push({
+      number,
+      correctIndex: answerNumber - 1,
+      reason: match[3].trim()
+    });
+  }
+  if (!answers.length) {
+    throw new Error("解答表が見つかりません。");
+  }
+  return answers;
+}
+
+function isPastQuestionFile(fileName) {
+  return /^過去問\d{4}年\.md$/.test(fileName) || /^予測問題\d{4}_第\d+回_問題\.md$/.test(fileName);
+}
+
+function getAnswerFileName(questionFileName) {
+  if (/^過去問\d{4}年\.md$/.test(questionFileName)) {
+    return questionFileName.replace(/^過去問/, "解答");
+  }
+  return questionFileName.replace(/_問題\.md$/i, "_解答.md");
+}
+
+function extractMarkdownTitle(markdown) {
+  const match = markdown.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : "";
+}
+
+function normalizeQuestionKey(question) {
+  return String(question || "").replace(/\s+/g, " ").trim();
 }
 
 function buildQuestionPayload() {

@@ -456,6 +456,25 @@ textarea:focus {
   margin-bottom: 14px;
 }
 
+.import-panel {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfcfc;
+  padding: 12px;
+}
+
+.import-panel h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.import-panel .form-message {
+  white-space: pre-line;
+}
+
 .list-stack {
   display: grid;
   gap: 10px;

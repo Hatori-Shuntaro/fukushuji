@@ -128,6 +128,17 @@
 
               <section class="workspace-panel" aria-labelledby="question-form-heading">
                 <h3 id="question-form-heading">問題</h3>
+                <section class="import-panel" aria-labelledby="import-heading">
+                  <h4 id="import-heading">過去問Markdown取込</h4>
+                  <label>
+                    <span>Markdownファイルまたはフォルダ</span>
+                    <input id="past-exam-files" type="file" accept=".md,text/markdown,text/plain" multiple webkitdirectory directory />
+                  </label>
+                  <div class="button-row">
+                    <button id="past-exam-import" class="secondary-button" type="button">一括登録</button>
+                  </div>
+                  <p id="past-exam-import-message" class="form-message" role="status"></p>
+                </section>
                 <form id="question-form" class="stack-form">
                   <input id="question-id" type="hidden" />
                   <label>
